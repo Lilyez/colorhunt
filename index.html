@@ -60,25 +60,10 @@ input{font:inherit}
 .btn:disabled{opacity:.5}
 .btn .leaf{width:18px;height:18px;fill:#fff;color:var(--c)}
 
-/* ---------- sheet ---------- */
-.dim{position:fixed;inset:0;background:rgba(30,20,10,.45);display:flex;align-items:flex-end;justify-content:center;z-index:20;animation:fade .2s}
-.sheet{background:var(--bg);width:100%;max-width:480px;border-radius:20px 20px 0 0;padding:20px 16px calc(20px + env(safe-area-inset-bottom));animation:up .25s ease-out;max-height:90vh;overflow:auto}
-.sheet-head{display:flex;align-items:center;margin-bottom:16px}
-.sheet-head h3{font-weight:800;font-size:19px}
-.sheet-head button{margin-left:auto;font-size:26px;line-height:1;width:36px;height:36px;color:var(--sub)}
-.picked{display:flex;gap:8px;overflow-x:auto;margin-bottom:18px}
-.picked img{width:76px;height:76px;object-fit:cover;border-radius:8px;flex:none}
-.field{width:100%;height:50px;border:1px solid var(--line);border-radius:12px;background:var(--paper);padding:0 14px;margin-top:8px;font-size:15px;color:var(--ink);outline:none}
-.field::placeholder{color:var(--sub)}
-.field:focus{border-color:var(--c)}
-.sheet .btn{margin-top:16px}
 
 /* ---------- lightbox ---------- */
 .lb{position:fixed;inset:0;background:rgba(20,14,8,.92);z-index:30;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;animation:fade .2s}
 .lb img{max-width:100%;max-height:72vh;border-radius:4px}
-.lb .meta{color:#fff;text-align:center;margin-top:16px;max-width:440px}
-.lb .meta p{font-weight:600;font-size:16px;line-height:1.5}
-.lb .meta small{display:block;margin-top:6px;opacity:.6;font-size:12px}
 
 /* ---------- result ---------- */
 .res-head{padding:60px 16px 8px;position:relative}
@@ -152,18 +137,18 @@ const API = ENDPOINT ? {
     try { return byNewest(await (await fetch(ENDPOINT)).json()); }
     catch (e) { console.error(e); return null; }
   },
-  async upload(team, blob, meta) {
+  async upload(team, blob) {
     const data = (await toBase64(blob)).split(',')[1];
     // text/plain으로 보내야 Apps Script에서 CORS 사전요청 없이 받는다
-    const r = await fetch(ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ team, data, ...meta }) });
+    const r = await fetch(ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ team, data }) });
     const j = await r.json();
     if (!j.ok) throw new Error(j.error);
     return j;
   },
 } : {
   async list() { return byNewest(await DB.all()); },
-  async upload(team, blob, meta) {
-    const item = { id: Date.now() + '-' + Math.random().toString(36).slice(2, 8), team, url: await toBase64(blob), ...meta, createdAt: Date.now() };
+  async upload(team, blob) {
+    const item = { id: Date.now() + '-' + Math.random().toString(36).slice(2, 8), team, url: await toBase64(blob), createdAt: Date.now() };
     await DB.put(item); return item;
   },
 };
@@ -190,12 +175,6 @@ function compress(file, max = 1400, q = 0.8) {
 
 /* ---------- utils ---------- */
 const $app = document.getElementById('app');
-const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const hhmm = t => new Date(t).toTimeString().slice(0, 5);
-const store = {
-  get: k => { try { return localStorage.getItem(k) || ''; } catch { return ''; } },
-  set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
-};
 function toast(msg) {
   const el = document.createElement('div'); el.className = 'toast'; el.textContent = msg;
   document.body.appendChild(el); setTimeout(() => el.remove(), 1800);
@@ -241,29 +220,8 @@ function renderTeam(k, list) {
   <div class="cta"><label class="btn">${leaf()} 사진 올리기<input type="file" accept="image/*" multiple hidden></label></div>`;
 
   $app.querySelectorAll('.pola:not(.up)').forEach(b => b.onclick = () => openLightbox(mine.find(p => p.id === b.dataset.id)));
-  $app.querySelector('input[type=file]').onchange = e => { if (e.target.files.length) openSheet(k, [...e.target.files]); e.target.value = ''; };
-}
-
-function openSheet(k, files) {
-  const urls = files.map(f => URL.createObjectURL(f));
-  const wrap = document.createElement('div'); wrap.className = 'dim';
-  wrap.innerHTML = `
-  <div class="sheet">
-    <div class="sheet-head"><h3>사진 올리기</h3><button data-x>×</button></div>
-    <div class="picked">${urls.map(u => `<img src="${u}" alt="">`).join('')}</div>
-    <input class="field" id="nm" placeholder="이름 (선택)" maxlength="12" value="${esc(store.get('ch-name'))}">
-    <input class="field" id="cm" placeholder="한마디 (선택)" maxlength="40">
-    <button class="btn" id="go">${files.length}장 올리기</button>
-  </div>`;
-  document.body.appendChild(wrap);
-  const close = () => { urls.forEach(URL.revokeObjectURL); wrap.remove(); };
-  wrap.onclick = e => { if (e.target === wrap || e.target.hasAttribute('data-x')) close(); };
-  wrap.querySelector('#go').onclick = () => {
-    const name = wrap.querySelector('#nm').value.trim(), comment = wrap.querySelector('#cm').value.trim();
-    store.set('ch-name', name);
-    wrap.remove();
-    startUpload(k, files.map((f, i) => ({ id: 'up-' + Date.now() + '-' + i, team: k, url: urls[i], up: true, file: f })), { name, comment });
-  };
+  $app.querySelector('input[type=file]').onchange = e => { const files = [...e.target.files]; e.target.value = '';
+    if (files.length) startUpload(k, files.map((f, i) => ({ id: 'up-' + Date.now() + '-' + i, team: k, url: URL.createObjectURL(f), up: true, file: f }))); };
 }
 
 /* ---------- 업로드: 고른 사진을 바로 보여주고 뒤에서 3장씩 동시에 올린다 ---------- */
@@ -275,19 +233,19 @@ function upbar() {
   if (!el) { el = document.createElement('div'); el.className = 'upbar'; document.body.appendChild(el); }
   el.textContent = `사진 올리는 중 ${upDone}/${upTotal}`;
 }
-async function startUpload(team, items, meta) {
+async function startUpload(team, items) {
   pending.unshift(...items); upTotal += items.length; upbar(); paint();
   let i = 0;
   const worker = async () => {
     while (i < items.length) {
       const it = items[i++];
       try {
-        const saved = await API.upload(team, await compress(it.file), meta);
+        const saved = await API.upload(team, await compress(it.file));
         cache = [saved, ...(cache || [])];
       } catch (err) { console.error(err); upFail++; }
       pending.splice(pending.indexOf(it), 1); URL.revokeObjectURL(it.url);
       upDone++; upbar();
-      if (!document.querySelector('.dim,.lb')) paint();
+      if (!document.querySelector('.lb')) paint();
     }
   };
   await Promise.all(Array.from({ length: Math.min(3, items.length) }, worker));
@@ -301,11 +259,7 @@ window.addEventListener('beforeunload', e => { if (pending.length) { e.preventDe
 function openLightbox(p) {
   if (!p) return;
   const el = document.createElement('div'); el.className = 'lb';
-  el.innerHTML = `<img src="${src(p, 1600)}" alt="">
-    <div class="meta">
-      ${p.comment ? `<p>${esc(p.comment)}</p>` : ''}
-      <small>${p.name ? esc(p.name) + ' · ' : ''}${hhmm(p.createdAt)}</small>
-    </div>`;
+  el.innerHTML = `<img src="${src(p, 1600)}" alt="">`;
   el.onclick = () => el.remove();
   document.body.appendChild(el);
 }
@@ -349,7 +303,7 @@ function refresh() {
     inflight = null;
     if (!list) return;
     cache = list;
-    if (sigOf(cache) !== shown && !document.querySelector('.dim,.lb')) paint();
+    if (sigOf(cache) !== shown && !document.querySelector('.lb')) paint();
   });
 }
 
