@@ -39,9 +39,6 @@ input{font:inherit}
 .modal-btns .ok{background:var(--ink);color:#fff}
 .modal-btns .ok.danger{background:#B3392A}
 .modal-err{color:#B3392A;font-size:13px;text-align:center;margin:-4px 0 10px}
-.ptr{position:fixed;top:0;left:50%;width:36px;height:36px;margin-left:-18px;border-radius:50%;background:#fff;box-shadow:0 2px 8px rgba(60,40,20,.18);display:grid;place-items:center;z-index:30;transform:translateY(-48px);transition:transform .2s;pointer-events:none}
-.ptr .leaf{width:18px;height:18px;fill:var(--c);color:#fff}
-.ptr.spin .leaf{animation:spin .8s linear infinite}
 html,body{overscroll-behavior-y:contain}
 .stripe{display:flex;height:14px;border-radius:7px;overflow:hidden;margin:28px 0 28px}
 .stripe i{flex:1}
@@ -386,29 +383,21 @@ function bindAdmin() {
   });
 }
 
-/* ---------- 아래로 당겨서 새로고침 ---------- */
+/* ---------- 아래로 당겨서 새로고침 (표시 없이 목록만 다시 불러온다) ---------- */
 (() => {
-  const el = document.createElement('div'); el.className = 'ptr'; el.innerHTML = leaf();
-  document.body.appendChild(el);
-  let startY = null, dist = 0, busy = false;
-  const set = d => { dist = d; el.style.transition = 'none'; el.style.transform = `translateY(${d - 48}px) rotate(${d * 4}deg)`; };
+  let startY = null, dist = 0;
   addEventListener('touchstart', e => {
-    if (busy || scrollY > 0 || document.querySelector('.lb,.modal')) return;
-    startY = e.touches[0].clientY;
+    if (scrollY > 0 || document.querySelector('.lb,.modal')) return;
+    startY = e.touches[0].clientY; dist = 0;
   }, { passive: true });
   addEventListener('touchmove', e => {
     if (startY === null) return;
-    const d = e.touches[0].clientY - startY;
-    if (d <= 0 || scrollY > 0) { startY = null; set(0); return; }
-    set(Math.min(d * 0.5, 90));
+    dist = e.touches[0].clientY - startY;
+    if (dist < 0 || scrollY > 0) startY = null;
   }, { passive: true });
-  addEventListener('touchend', async () => {
-    if (startY === null) return;
-    startY = null; el.style.transition = '';
-    if (dist < 60) { el.style.transform = 'translateY(-48px)'; return; }
-    busy = true; el.classList.add('spin'); el.style.transform = `translateY(${adminPw ? 60 : 16}px)`;
-    await refresh();
-    el.classList.remove('spin'); el.style.transform = 'translateY(-48px)'; busy = false;
+  addEventListener('touchend', () => {
+    if (startY !== null && dist > 80) refresh();
+    startY = null;
   });
 })();
 
