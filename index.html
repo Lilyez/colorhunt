@@ -291,7 +291,6 @@ function renderResult(data) {
   const byTeam = k => list.filter(p => p.team === k);
   const tiles = ORDER.flatMap(k => byTeam(k).map(p => ({ k, p })));
   if (!tiles.length) ORDER.forEach(k => tiles.push(...Array(4).fill({ k })));
-  while (tiles.length % 5) tiles.push({ k: tiles[tiles.length - 1].k });
   $app.innerHTML = `
   <header class="res-head">
     <a class="back" href="#/">‹</a>
