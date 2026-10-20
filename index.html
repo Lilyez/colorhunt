@@ -24,7 +24,25 @@ input{font:inherit}
 .home{padding:48px 16px 40px}
 .home h1{font-family:'KIMWILDgag-Bold',sans-serif;font-weight:normal;font-size:64px;line-height:1.1}
 .foot{padding:44px 0 8px;text-align:center}
-.foot img{height:22px;width:auto;opacity:.9}
+.foot img{height:22px;width:auto;opacity:.9;display:block;margin:0 auto}
+.admin-link{display:block;margin:10px auto 0;padding:6px 10px;font-size:11px;color:#B5AA9E;letter-spacing:.02em}
+.adminbar{position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:25;display:flex;align-items:center;gap:10px;background:var(--ink);color:#fff;padding:8px 8px 8px 14px;border-radius:999px;font-size:13px;font-weight:700;white-space:nowrap}
+.adminbar button{background:rgba(255,255,255,.18);color:#fff;border-radius:999px;padding:4px 10px;font-size:12px;font-weight:600}
+.del{position:absolute;top:4px;right:4px;width:28px;height:28px;border-radius:50%;background:rgba(20,14,8,.7);color:#fff;font-size:18px;line-height:28px;text-align:center;z-index:2}
+.modal{position:fixed;inset:0;z-index:50;background:rgba(20,14,8,.5);display:flex;align-items:center;justify-content:center;padding:16px;animation:fade .15s}
+.modal-box{background:var(--bg);width:100%;max-width:320px;border-radius:16px;padding:22px 18px 16px}
+.modal-box h3{font-size:17px;font-weight:800;text-align:center;margin-bottom:14px}
+.modal-box input{width:100%;height:48px;border:1px solid var(--line);border-radius:10px;background:var(--paper);padding:0 14px;font-size:16px;color:var(--ink);outline:none;margin-bottom:12px}
+.modal-box input:focus{border-color:var(--ink)}
+.modal-btns{display:flex;gap:8px}
+.modal-btns button{flex:1;height:46px;border-radius:10px;font-weight:700;font-size:15px;background:var(--line)}
+.modal-btns .ok{background:var(--ink);color:#fff}
+.modal-btns .ok.danger{background:#B3392A}
+.modal-err{color:#B3392A;font-size:13px;text-align:center;margin:-4px 0 10px}
+.ptr{position:fixed;top:0;left:50%;width:36px;height:36px;margin-left:-18px;border-radius:50%;background:#fff;box-shadow:0 2px 8px rgba(60,40,20,.18);display:grid;place-items:center;z-index:30;transform:translateY(-48px);transition:transform .2s;pointer-events:none}
+.ptr .leaf{width:18px;height:18px;fill:var(--c);color:#fff}
+.ptr.spin .leaf{animation:spin .8s linear infinite}
+html,body{overscroll-behavior-y:contain}
 .stripe{display:flex;height:14px;border-radius:7px;overflow:hidden;margin:28px 0 28px}
 .stripe i{flex:1}
 .teams{list-style:none;display:grid;gap:10px}
@@ -129,7 +147,7 @@ const DB = (() => {
     const q = fn(db.transaction('photos', mode).objectStore('photos'));
     q.onsuccess = () => res(q.result); q.onerror = () => rej(q.error);
   }); };
-  return { all: () => tx('readonly', s => s.getAll()), put: v => tx('readwrite', s => s.put(v)) };
+  return { all: () => tx('readonly', s => s.getAll()), put: v => tx('readwrite', s => s.put(v)), del: id => tx('readwrite', s => s.delete(id)) };
 })();
 
 const API = ENDPOINT ? {
@@ -145,12 +163,17 @@ const API = ENDPOINT ? {
     if (!j.ok) throw new Error(j.error);
     return j;
   },
+  async admin(body) {
+    const r = await fetch(ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(body), signal: AbortSignal.timeout(20000) });
+    return r.json();
+  },
 } : {
   async list() { return byNewest(await DB.all()); },
   async upload(team, blob) {
     const item = { id: Date.now() + '-' + Math.random().toString(36).slice(2, 8), team, url: await toBase64(blob), createdAt: Date.now() };
     await DB.put(item); return item;
   },
+  async admin(body) { if (body.action === 'delete') await DB.del(body.id); return { ok: true }; },
 };
 
 // 드라이브 사진은 id로 크기별 이미지를 받는다
@@ -199,7 +222,7 @@ function renderHome(list) {
       </a></li>`; }).join('')}
     </ul>
     <a class="ghost" href="#/result">전체 모아보기</a>
-    <footer class="foot"><img src="https://cdn.imweb.me/thumbnail/20250530/1404a29fb35b3.png" alt="인천 스펙타클"></footer>
+    ${foot()}
   </main>`;
 }
 
@@ -214,7 +237,7 @@ function renderTeam(k, list) {
     <h1>${t.ko}</h1>
   </header>
   <section class="gallery">
-    ${!list && !mine.length ? '<div class="sk"></div>'.repeat(6) : mine.length ? mine.map(p => `<button class="pola${p.up ? ' up' : ''}" data-id="${p.id}"><img src="${src(p, 500)}" alt="" loading="lazy"></button>`).join('')
+    ${!list && !mine.length ? '<div class="sk"></div>'.repeat(6) : mine.length ? mine.map(p => `<button class="pola${p.up ? ' up' : ''}" data-id="${p.id}"><img src="${src(p, 500)}" alt="" loading="lazy">${delBtn(p)}</button>`).join('')
       : `<div class="empty">${leaf()}<div>아직 사진이 없어요</div></div>`}
   </section>
   <div class="cta"><label class="btn">${leaf()} 사진 올리기<input type="file" accept="image/*" multiple hidden></label></div>`;
@@ -285,19 +308,115 @@ function renderResult(data) {
   ${ORDER.map(k => { const t = TEAMS[k], ps = byTeam(k); return `
   <section class="rsec" style="--c:${t.c}">
     <h2><em style="background:${t.c}"></em><span class="nm">${t.ko}</span><small>${ps.length}장</small></h2>
-    <div class="row">${ps.length ? ps.map(p => `<button class="pola" data-id="${p.id}"><img src="${src(p, 400)}" alt="" loading="lazy"></button>`).join('') : '<span class="none">—</span>'}</div>
+    <div class="row">${ps.length ? ps.map(p => `<button class="pola" data-id="${p.id}"><img src="${src(p, 400)}" alt="" loading="lazy">${delBtn(p)}</button>`).join('') : '<span class="none">—</span>'}</div>
   </section>`; }).join('')}
-  <div class="res-foot"><footer class="foot"><img src="https://cdn.imweb.me/thumbnail/20250530/1404a29fb35b3.png" alt="인천 스펙타클"></footer></div>`;
+  <div class="res-foot">${foot()}</div>`;
   $app.querySelectorAll('.pola').forEach(b => b.onclick = () => {
     const p = list.find(x => x.id === b.dataset.id); setTheme(p.team); openLightbox(p);
   });
 }
 
+/* ---------- 관리자: 비밀번호 확인 후 사진 삭제 ---------- */
+const session = {
+  get: k => { try { return sessionStorage.getItem(k) || ''; } catch { return ''; } },
+  set: (k, v) => { try { v ? sessionStorage.setItem(k, v) : sessionStorage.removeItem(k); } catch {} },
+};
+let adminPw = session.get('ch-admin');
+const foot = () => `<footer class="foot"><img src="https://cdn.imweb.me/thumbnail/20250530/1404a29fb35b3.png" alt="인천 스펙타클"><button class="admin-link">Admin</button></footer>`;
+const delBtn = p => adminPw && !p.up ? `<span class="del" data-del="${p.id}">×</span>` : '';
+
+// 작은 확인 창: input이 있으면 입력값을, 없으면 true를 돌려준다 (취소는 null)
+function ask({ title, input, ok = '확인', danger, check }) {
+  return new Promise(resolve => {
+    const el = document.createElement('div'); el.className = 'modal';
+    el.innerHTML = `<div class="modal-box"><h3>${title}</h3>${input ? `<input type="${input}" autocomplete="off">` : ''}<div class="modal-err" hidden></div>
+      <div class="modal-btns"><button class="no">취소</button><button class="ok${danger ? ' danger' : ''}">${ok}</button></div></div>`;
+    document.body.appendChild(el);
+    const inp = el.querySelector('input'), err = el.querySelector('.modal-err'), okBtn = el.querySelector('.ok');
+    const done = v => { el.remove(); resolve(v); };
+    const submit = async () => {
+      const v = inp ? inp.value : true;
+      if (inp && !v) return;
+      if (check) {
+        okBtn.disabled = true; okBtn.textContent = '확인 중…';
+        const msg = await check(v);
+        okBtn.disabled = false; okBtn.textContent = ok;
+        if (msg) { err.textContent = msg; err.hidden = false; inp?.select(); return; }
+      }
+      done(v);
+    };
+    el.querySelector('.no').onclick = () => done(null);
+    el.onclick = e => { if (e.target === el) done(null); };
+    okBtn.onclick = submit;
+    inp?.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+    inp?.focus();
+  });
+}
+
+function bindAdmin() {
+  document.querySelector('.adminbar')?.remove();
+  if (adminPw) {
+    const bar = document.createElement('div'); bar.className = 'adminbar';
+    bar.innerHTML = '관리자 모드<button>나가기</button>';
+    bar.querySelector('button').onclick = () => { adminPw = ''; session.set('ch-admin', ''); paint(); };
+    document.body.appendChild(bar);
+  }
+  const link = $app.querySelector('.admin-link');
+  if (link) link.onclick = async () => {
+    if (adminPw) return;
+    const pw = await ask({ title: '관리자 비밀번호', input: 'password', check: async v => {
+      try { return (await API.admin({ action: 'login', pw: v })).ok ? '' : '비밀번호가 맞지 않아요'; }
+      catch { return '연결에 실패했어요'; }
+    } });
+    if (pw) { adminPw = pw; session.set('ch-admin', pw); paint(); }
+  };
+  $app.querySelectorAll('[data-del]').forEach(x => x.onclick = async e => {
+    e.stopPropagation();
+    const id = x.dataset.del;
+    if (!await ask({ title: '이 사진을 삭제할까요?', ok: '삭제', danger: true })) return;
+    x.closest('.pola').style.opacity = '.3';
+    try {
+      const r = await API.admin({ action: 'delete', pw: adminPw, id });
+      if (!r.ok) throw new Error(r.error);
+      cache = (cache || []).filter(p => p.id !== id); paint(); toast('삭제했어요');
+    } catch (err) {
+      console.error(err); x.closest('.pola').style.opacity = '';
+      toast(String(err.message) === 'pw' ? '비밀번호를 다시 확인해 주세요' : '삭제하지 못했어요');
+    }
+  });
+}
+
+/* ---------- 아래로 당겨서 새로고침 ---------- */
+(() => {
+  const el = document.createElement('div'); el.className = 'ptr'; el.innerHTML = leaf();
+  document.body.appendChild(el);
+  let startY = null, dist = 0, busy = false;
+  const set = d => { dist = d; el.style.transition = 'none'; el.style.transform = `translateY(${d - 48}px) rotate(${d * 4}deg)`; };
+  addEventListener('touchstart', e => {
+    if (busy || scrollY > 0 || document.querySelector('.lb,.modal')) return;
+    startY = e.touches[0].clientY;
+  }, { passive: true });
+  addEventListener('touchmove', e => {
+    if (startY === null) return;
+    const d = e.touches[0].clientY - startY;
+    if (d <= 0 || scrollY > 0) { startY = null; set(0); return; }
+    set(Math.min(d * 0.5, 90));
+  }, { passive: true });
+  addEventListener('touchend', async () => {
+    if (startY === null) return;
+    startY = null; el.style.transition = '';
+    if (dist < 60) { el.style.transform = 'translateY(-48px)'; return; }
+    busy = true; el.classList.add('spin'); el.style.transform = `translateY(${adminPw ? 60 : 16}px)`;
+    await refresh();
+    el.classList.remove('spin'); el.style.transform = 'translateY(-48px)'; busy = false;
+  });
+})();
+
 /* ---------- 라우터 ---------- */
 // 화면은 가지고 있는 목록(cache)으로 바로 그리고, 새 목록이 오면 바뀐 경우에만 다시 그린다
 let cache = null, current = null, shown = null, inflight = null;
 const sigOf = l => l ? l.map(p => p.id).join() : null;
-function paint() { shown = sigOf(cache); current(cache); upbar(); }
+function paint() { shown = sigOf(cache); current(cache); upbar(); bindAdmin(); }
 function refresh() {
   return inflight ||= API.list().then(list => {
     inflight = null;
